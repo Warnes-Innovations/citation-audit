@@ -35,7 +35,7 @@ def _as_json(obj) -> str:
 @click.group()
 @click.version_option()
 def main():
-    """citation-audit — CLI for LaTeX citation auditing and assertion classification."""
+    """citation-audit — CLI for citation auditing and assertion classification."""
 
 
 # ---------------------------------------------------------------------------
@@ -50,10 +50,10 @@ def main():
               default="all", show_default=True)
 def cmd_extract(doc: str, fmt: str, only: str):
     """
-    Parse DOC (.tex) and classify every sentence.
+    Parse DOC (.tex or .md) and classify every sentence.
 
     Outputs structured assertion records.  Use --only to filter:
-    cited        = sentences that already have \\citep{}
+    cited        = sentences that already have a citation marker
     uncited      = sentences with no citation marker
     needs-citation = asserted-facts with no citation (ready for citation-finder)
     """

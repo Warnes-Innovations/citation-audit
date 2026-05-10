@@ -1,4 +1,4 @@
-"""Extract sentences and citation markers from a LaTeX document."""
+"""Extract sentences and citation markers from LaTeX or Markdown documents."""
 from __future__ import annotations
 
 import re
@@ -20,12 +20,28 @@ class Sentence:
 # Public API
 # ---------------------------------------------------------------------------
 
-def extract_sentences(tex_path: Path) -> list[Sentence]:
-    """Parse a .tex file and return one Sentence per detected sentence."""
-    raw_text = tex_path.read_text(encoding="utf-8", errors="replace")
-    # Build a line-offset map so we can recover approximate line numbers
+_MARKDOWN_SUFFIXES = {'.md', '.markdown', '.mdown', '.mkd'}
+_LATEX_SUFFIXES    = {'.tex', '.ltx'}
+
+
+def extract_sentences(doc_path: Path) -> list[Sentence]:
+    """
+    Parse a .tex or .md file and return one Sentence per detected sentence.
+
+    File type is determined by suffix; raises ValueError for unsupported types.
+    """
+    raw_text = doc_path.read_text(encoding="utf-8", errors="replace")
     line_starts = _build_line_starts(raw_text)
-    stripped, offset_map = _strip_latex(raw_text)
+    suffix = doc_path.suffix.lower()
+    if suffix in _MARKDOWN_SUFFIXES:
+        stripped, offset_map = _strip_markdown(raw_text)
+    elif suffix in _LATEX_SUFFIXES:
+        stripped, offset_map = _strip_latex(raw_text)
+    else:
+        raise ValueError(
+            f"Unsupported file type '{suffix}'. "
+            f"Expected one of: {sorted(_LATEX_SUFFIXES | _MARKDOWN_SUFFIXES)}"
+        )
     return _split_into_sentences(stripped, offset_map, line_starts)
 
 
@@ -33,6 +49,95 @@ def assertion_id(doc_stem: str, text: str) -> str:
     """Return a stable short ID for an assertion."""
     digest = hashlib.sha256(f"{doc_stem}:{text}".encode()).hexdigest()[:8]
     return f"a-{digest}"
+
+
+# ---------------------------------------------------------------------------
+# Markdown stripping
+# ---------------------------------------------------------------------------
+
+def _strip_markdown(text: str) -> tuple[str, list[tuple[int, int]]]:
+    """
+    Strip Markdown markup from *text* and return (plain_text, offset_map).
+
+    Citation conventions supported:
+      - Pandoc / Quarto: [@key] [@key1; @key2] [-@key]
+      - Obsidian-refs:   [#key]
+      - Footnote-style:  [^key] used as inline citation
+    All are normalised to [CITE:key] before stripping.
+    """
+    # --- YAML front-matter (---\n...\n---) ---------------------------------
+    text = text.lstrip('\n')
+    text = re.sub(r'^---\n.*?\n---\n', '', text, count=1, flags=re.DOTALL)
+
+    # --- Fenced code blocks (``` or ~~~) ------------------------------------
+    text = re.sub(r'```.*?```', '\n\n', text, flags=re.DOTALL)
+    text = re.sub(r'~~~.*?~~~', '\n\n', text, flags=re.DOTALL)
+
+    # --- Inline code (`...`) ------------------------------------------------
+    text = re.sub(r'`[^`\n]+`', 'CODE', text)
+
+    # --- Pandoc/Quarto citation markers → [CITE:key] -----------------------
+    # Multi-key: [@key1; @key2; ...] → [CITE:key1,key2,...]
+    def _pandoc_multi(m: re.Match) -> str:
+        inner = m.group(1)
+        keys = [k.strip().lstrip('-').lstrip('@') for k in inner.split(';')]
+        keys = [k for k in keys if k]
+        return f'[CITE:{",".join(keys)}]'
+
+    text = re.sub(r'\[(-?@[^\]]+)\]', _pandoc_multi, text)
+
+    # Footnote-style inline citations [^key] that follow a word
+    text = re.sub(r'\[\^([^\]\n]+)\]', r'[CITE:\1]', text)
+
+    # Obsidian-style [#key]
+    text = re.sub(r'\[#([^\]\n]+)\]', r'[CITE:\1]', text)
+
+    # --- Block-level elements to remove ------------------------------------
+    # Images: ![alt](url) or ![alt][ref]
+    text = re.sub(r'!\[[^\]]*\](?:\([^)]*\)|\[[^\]]*\])', '', text)
+
+    # HTML tags
+    text = re.sub(r'<[^>]+>', '', text)
+
+    # Block quotes (keep content, remove leading >)
+    text = re.sub(r'^>+\s?', '', text, flags=re.MULTILINE)
+
+    # Horizontal rules
+    text = re.sub(r'^\s*[-*_]{3,}\s*$', '', text, flags=re.MULTILINE)
+
+    # --- Headings: keep title text as a sentence seed ----------------------
+    # ATX headings: # Title  →  Title.
+    text = re.sub(r'^#{1,6}\s+(.+)$', r'\1. ', text, flags=re.MULTILINE)
+    # Setext headings (underline style): keep the preceding text line as-is
+    text = re.sub(r'^[=\-]{3,}\s*$', '', text, flags=re.MULTILINE)
+
+    # --- Inline formatting: unwrap, keep inner text ------------------------
+    # Bold+italic: ***text*** or ___text___
+    text = re.sub(r'[*_]{3}([^*_\n]+)[*_]{3}', r'\1', text)
+    # Bold: **text** or __text__
+    text = re.sub(r'[*_]{2}([^*_\n]+)[*_]{2}', r'\1', text)
+    # Italic: *text* or _text_
+    text = re.sub(r'[*_]([^*_\n]+)[*_]', r'\1', text)
+    # Strikethrough: ~~text~~
+    text = re.sub(r'~~([^~\n]+)~~', r'\1', text)
+
+    # --- Links: [text](url) → text; [text][ref] → text --------------------
+    text = re.sub(r'\[([^\]]+)\]\([^)]*\)', r'\1', text)
+    text = re.sub(r'\[([^\]]+)\]\[[^\]]*\]', r'\1', text)
+    # Bare link refs: [text] (remaining, not already a CITE marker)
+    text = re.sub(r'\[(?!CITE:)([^\]]+)\](?!\(|\[)', r'\1', text)
+
+    # --- List markers -------------------------------------------------------
+    text = re.sub(r'^\s*[-*+]\s+', '', text, flags=re.MULTILINE)
+    text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)
+
+    # --- Cleanup whitespace -------------------------------------------------
+    lines = [re.sub(r'[ \t]+', ' ', ln).strip() for ln in text.splitlines()]
+    text = '\n'.join(lines)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+
+    offset_map: list[tuple[int, int]] = [(0, 0)]
+    return text, offset_map
 
 
 # ---------------------------------------------------------------------------

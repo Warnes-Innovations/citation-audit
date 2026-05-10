@@ -138,3 +138,132 @@ class TestExtractSentences:
         assert len(sentences) >= 1
         assert r"\textbf" not in sentences[0].text
         assert "enzyme" in sentences[0].text
+
+
+class TestExtractSentencesMarkdown:
+    def _write(self, tmp_path: Path, content: str, name: str = "test.md") -> Path:
+        p = tmp_path / name
+        p.write_text(textwrap.dedent(content))
+        return p
+
+    def test_pandoc_citation_extracted(self, tmp_path: Path):
+        p = self._write(tmp_path, """
+            Studies have demonstrated improved outcomes [@smith2020].
+        """)
+        sentences = extract_sentences(p)
+        cited = [s for s in sentences if s.citations]
+        assert len(cited) >= 1
+        assert "smith2020" in cited[0].citations
+
+    def test_pandoc_multi_citation_flattened(self, tmp_path: Path):
+        p = self._write(tmp_path, """
+            This is confirmed by multiple studies [@jones2019; @lee2021].
+        """)
+        sentences = extract_sentences(p)
+        cited = [s for s in sentences if s.citations]
+        assert len(cited) >= 1
+        assert "jones2019" in cited[0].citations
+        assert "lee2021" in cited[0].citations
+
+    def test_suppressed_author_citation(self, tmp_path: Path):
+        p = self._write(tmp_path, """
+            The method was introduced in 2018 [-@brown2018] and has since been widely adopted.
+        """)
+        sentences = extract_sentences(p)
+        cited = [s for s in sentences if s.citations]
+        assert len(cited) >= 1
+        assert "brown2018" in cited[0].citations
+
+    def test_footnote_citation_extracted(self, tmp_path: Path):
+        p = self._write(tmp_path, """
+            Neural networks achieve high accuracy on this benchmark.[^lecun1998]
+            This sentence is long enough to pass the length filter and be included.
+        """)
+        sentences = extract_sentences(p)
+        cited = [s for s in sentences if s.citations]
+        assert len(cited) >= 1
+        assert "lecun1998" in cited[0].citations
+
+    def test_yaml_front_matter_removed(self, tmp_path: Path):
+        p = self._write(tmp_path, """
+            ---
+            title: My Document
+            author: Jane Doe
+            ---
+
+            This is the body of the document, which is a real sentence.
+        """)
+        sentences = extract_sentences(p)
+        texts = " ".join(s.text for s in sentences)
+        assert "title" not in texts
+        assert "Jane Doe" not in texts
+        assert "body" in texts
+
+    def test_fenced_code_block_removed(self, tmp_path: Path):
+        p = self._write(tmp_path, """
+            The algorithm is implemented as follows.
+
+            ```python
+            def secret_internal_logic(): pass
+            ```
+
+            The implementation details are omitted here for brevity.
+        """)
+        sentences = extract_sentences(p)
+        texts = " ".join(s.text for s in sentences)
+        assert "secret_internal_logic" not in texts
+
+    def test_heading_kept_as_sentence(self, tmp_path: Path):
+        p = self._write(tmp_path, """
+            ## Results and Discussion
+        """)
+        sentences = extract_sentences(p)
+        texts = " ".join(s.text for s in sentences)
+        assert "Results and Discussion" in texts
+        assert "#" not in texts
+
+    def test_inline_formatting_stripped(self, tmp_path: Path):
+        p = self._write(tmp_path, """
+            The **primary outcome** was a *statistically significant* improvement in accuracy.
+        """)
+        sentences = extract_sentences(p)
+        assert len(sentences) >= 1
+        assert "**" not in sentences[0].text
+        assert "*" not in sentences[0].text
+        assert "primary outcome" in sentences[0].text
+
+    def test_image_removed(self, tmp_path: Path):
+        p = self._write(tmp_path, """
+            The results are shown below.
+            ![Figure 1: Accuracy over epochs](figures/accuracy.png)
+            Performance improved monotonically across all training epochs tested.
+        """)
+        sentences = extract_sentences(p)
+        texts = " ".join(s.text for s in sentences)
+        assert "figures/accuracy.png" not in texts
+        assert "Figure 1" not in texts
+
+    def test_link_text_kept_url_removed(self, tmp_path: Path):
+        p = self._write(tmp_path, """
+            More details are available in the supplementary materials provided online.
+        """)
+        sentences = extract_sentences(p)
+        texts = " ".join(s.text for s in sentences)
+        assert "http" not in texts
+
+    def test_unsupported_suffix_raises(self, tmp_path: Path):
+        import pytest
+        p = tmp_path / "document.rst"
+        p.write_text("Some content.")
+        with pytest.raises(ValueError, match="Unsupported file type"):
+            extract_sentences(p)
+
+    def test_markdown_suffix_variants(self, tmp_path: Path):
+        """Both .md and .markdown suffixes are accepted."""
+        content = "This sentence is long enough to be included in extraction results.\n"
+        for suffix in (".md", ".markdown"):
+            p = tmp_path / f"doc{suffix}"
+            p.write_text(content)
+            sentences = extract_sentences(p)
+            assert len(sentences) >= 1
+
