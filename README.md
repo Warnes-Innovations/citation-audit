@@ -1,6 +1,6 @@
 # citation-audit
 
-CLI, MCP server, coding agents, and shared skill for auditing citations in LaTeX documents.
+CLI, MCP server, coding agents, and shared skill for auditing citations in LaTeX and Markdown documents.
 
 Extracts and classifies every sentence by assertion type, manages `.audit/` artifact
 folders per citation, and maintains an `index.json` audit record. Ships the
@@ -25,7 +25,7 @@ at `.github/skills/citation-audit-common/SKILL.md`.
 
 | Command | Description |
 |---|---|
-| `extract DOC` | Parse `.tex`, classify every sentence, output JSON |
+| `extract DOC` | Parse `.tex` or `.md`, classify every sentence, output JSON |
 | `scaffold DOC LABEL` | Create `.audit/<doc>/<label>/` stub files |
 | `scaffold-assertion DOC ID --text TEXT` | Create `.audit/<doc>/assertions/<id>/` stub |
 | `update-citation DOC LABEL [options]` | Patch citation record in `index.json` |
@@ -37,7 +37,7 @@ at `.github/skills/citation-audit-common/SKILL.md`.
 
 | Tool | Description |
 |---|---|
-| `extract_assertions` | Parse `.tex` and classify sentences |
+| `extract_assertions` | Parse `.tex` or `.md` and classify sentences |
 | `get_audit_status` | Return full `index.json` for a document |
 | `scaffold_citation` | Create citation stub artifacts |
 | `scaffold_assertion_artifact` | Create uncited assertion stub |

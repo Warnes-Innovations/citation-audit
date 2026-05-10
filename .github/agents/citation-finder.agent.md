@@ -4,7 +4,7 @@ version: 1.2
 name: "Citation Finder"
 tools: [read, edit, search, web]
 skills: [citation-audit-common]
-argument-hint: "Path to the document to find citations for (e.g. knowledge-system.tex)"
+argument-hint: "Path to the document to find citations for (e.g. knowledge-system.tex or knowledge-system.md)"
 user-invocable: true
 handoffs:
   - label: "Audit existing citations"
@@ -23,7 +23,7 @@ Use `citation-audit-common` for URL field requirements, scoring, confirmation ty
 ## Constraints
 - Do not fabricate citations, DOIs, authors, or publication details.
 - Do not insert a citation into the document until the user explicitly approves it via /obo.
-- Do not modify the .bib file or .tex file until the user approves.
+- Do not modify the .bib file or source document until the user approves.
 - Skip assertions that are definitions, methodological choices, or the author's own contributions — only target externally verifiable factual claims.
 
 ## Approach
@@ -71,14 +71,20 @@ For each assertion:
    - **Proposed BibTeX key**: e.g. `Smith2019_glucose`
    - **Support score**: e.g. +75
    - **Proposed BibTeX entry**: the full entry to add to the .bib file
-   - **Proposed edit**: the exact change to the .tex file (e.g. `... glucose uptake.` → `... glucose uptake \citep{Smith2019_glucose}.`)
-   - **For assertions already citing `\citep{OldKey}`**: present three options explicitly — (a) replace `OldKey` with the new key, (b) append the new key alongside `OldKey`, (c) leave the document unchanged. Do not choose for the user.
+   - **Proposed edit**: the exact change to the source document
+     - For LaTeX (`.tex`): e.g. `... glucose uptake.` → `... glucose uptake \citep{Smith2019_glucose}.`
+     - For Markdown (`.md`): e.g. `... glucose uptake.` → `... glucose uptake [@Smith2019_glucose].`
+   - **For assertions already citing `\citep{OldKey}` or `[@OldKey]`**: present three options explicitly — (a) replace `OldKey` with the new key, (b) append the new key alongside `OldKey`, (c) leave the document unchanged. Do not choose for the user.
 3. For each item the user **approves**:
    a. Add the BibTeX entry to the project's `.bib` file (using BibTeX write-back validation rules from `citation-audit-common`).
-   b. Insert the `\citep{<key>}` at the approved location in the .tex file.
+   b. Insert the citation at the approved location in the source document:
+     - LaTeX: `\citep{<key>}`
+     - Markdown (Pandoc/Quarto): `[@<key>]`
    c. Create `.audit/<citing-document>/<key>/publication.md` with full bibliographic metadata and URL fields.
 4. For each item the user **denies or skips**: record it in the OBO session and leave the document unchanged.
-5. After all items are reviewed, offer to rebuild the bibliography (latexmk/bibtex) if any citations were approved.
+5. After all items are reviewed, offer to rebuild the bibliography if any citations were approved:
+   - LaTeX: run `latexmk` / `bibtex` as appropriate.
+   - Markdown/Quarto: remind the user to re-render with `quarto render` or `pandoc --citeproc`.
 
 ## Output
 After the /obo session completes, return a summary with:

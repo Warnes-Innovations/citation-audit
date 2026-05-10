@@ -169,21 +169,21 @@ A shared CLI and MCP server (`citation-audit`) implements the mechanical operati
 
 ### CLI (`citation-audit`)
 ```
-citation-audit extract <doc.tex> [--only all|cited|uncited|needs-citation] [--format json|table]
-citation-audit scaffold <doc.tex> <label>
-citation-audit scaffold-assertion <doc.tex> <id> --text "..."
-citation-audit update-citation <doc.tex> <label> [--score N] [--confirmation TYPE]
+citation-audit extract <doc> [--only all|cited|uncited|needs-citation] [--format json|table]
+citation-audit scaffold <doc> <label>
+citation-audit scaffold-assertion <doc> <id> --text "..."
+citation-audit update-citation <doc> <label> [--score N] [--confirmation TYPE]
     [--assertion-type TYPE] [--bib-mismatch "field: A → B"] [--score-reason "..."]
     [--status STATUS]
-citation-audit tag-assertion <doc.tex> <id> --type TYPE [--text "..."] [--notes "..."]
-citation-audit list <doc.tex> [--what citations|assertions|both] [--format json|table]
-citation-audit report <doc.tex> [--format markdown|json]
+citation-audit tag-assertion <doc> <id> --type TYPE [--text "..."] [--notes "..."]
+citation-audit list <doc> [--what citations|assertions|both] [--format json|table]
+citation-audit report <doc> [--format markdown|json]
 ```
 
 ### MCP tools (server name: `citation-audit`)
 | Tool | Purpose |
 |---|---|
-| `extract_assertions` | Parse .tex and return classified assertion list |
+| `extract_assertions` | Parse `.tex`/`.md` and return classified assertion list |
 | `get_audit_status` | Return full index.json for a document |
 | `scaffold_citation` | Create citation artifact stubs |
 | `scaffold_assertion_artifact` | Create uncited-assertion artifact stub |
@@ -193,7 +193,7 @@ citation-audit report <doc.tex> [--format markdown|json]
 | `compute_assertion_id` | Return stable ID for a sentence |
 
 ### When to use each
-- **`extract_assertions`**: at the start of any citation-finder or assertion-audit session — replaces the agent reading the full .tex itself.
+- **`extract_assertions`**: at the start of any citation-finder or assertion-audit session — replaces the agent reading the full source document itself.
 - **`update_citation_record` / `tag_assertion`**: after completing a CrossRef/PubMed lookup or classifying an assertion — replaces manual JSON edits.
 - **`get_audit_status`**: at the start of a session to restore prior state without re-auditing.
 - **`scaffold_citation`**: immediately after identifying a new citation, before fetching source metadata.

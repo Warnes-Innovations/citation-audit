@@ -3,13 +3,13 @@
 ## What this repo is
 
 Python CLI, MCP server, VS Code Copilot agents, and shared skill for auditing
-LaTeX citations and classifying assertions.
+LaTeX and Markdown citations and classifying assertions.
 
 ## Build & test commands
 
 ```bash
 uv sync --extra dev          # install editable with dev deps
-uv run pytest                # run all 121 tests
+uv run pytest                # run all 136 tests
 uv run pytest --tb=short -q  # quick summary
 ```
 
@@ -18,7 +18,7 @@ uv run pytest --tb=short -q  # quick summary
 - `src/citation_audit/core/schema.py` — `AssertionRecord`, `CitationRecord`, `AuditIndex`
 - `src/citation_audit/core/index.py` — atomic `index.json` read/write
 - `src/citation_audit/core/scaffold.py` — stub artifact folder creation
-- `src/citation_audit/core/extractor.py` — `.tex` parser → `list[Sentence]`
+- `src/citation_audit/core/extractor.py` — `.tex`/`.md` parser → `list[Sentence]`
 - `src/citation_audit/core/classifier.py` — signal-word heuristic classifier
 - `src/citation_audit/cli.py` — Click CLI (`citation-audit`)
 - `src/citation_audit/mcp_server.py` — FastMCP server (`citation-audit-mcp`)
@@ -33,7 +33,7 @@ uv run pytest --tb=short -q  # quick summary
 - All functions fully type-annotated
 - No HTTP calls inside this package
 - Assertion IDs are `"a-" + sha256(f"{doc_stem}:{text}")[:8]` — do not change
-- `.audit/` lives beside the `.tex` file; `index.json` is written atomically
+- `.audit/` lives beside the source document; `index.json` is written atomically
 
 ## Do not
 

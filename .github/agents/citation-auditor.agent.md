@@ -25,7 +25,10 @@ Use `citation-audit-common` as the authoritative source for definitions, artifac
 ## Approach
 1. Call `get_audit_status(<doc>)` (MCP) or `citation-audit list` (CLI) to restore any prior audit state before reading files.
 2. Identify the citing document and all citation references.
-   - To locate the `.bib` file: scan the `.tex` source for `\bibliography{...}` or `\addbibresource{...}` commands and resolve the named file(s) relative to the `.tex` file's directory. If no such command is found, search the same directory for any `.bib` file. If multiple `.bib` files are found and the correct one is ambiguous, ask the user before proceeding.
+   - To locate the `.bib` file:
+     - **LaTeX**: scan the `.tex` source for `\bibliography{...}` or `\addbibresource{...}` commands and resolve the named file(s) relative to the `.tex` file's directory.
+     - **Markdown**: check the YAML front-matter for a `bibliography:` key; resolve relative to the document's directory.
+     - If no such command or key is found, search the same directory for any `.bib` file. If multiple `.bib` files are found and the correct one is ambiguous, ask the user before proceeding.
 3. Normalize the citing document name into a path-safe form and create/update `.audit/<normalized-citing-document>/<bibtex-label>/` using `scaffold_citation` (MCP) or `citation-audit scaffold` (CLI).
 4. **Validate each citation against an authoritative database** before scoring — see the Bibliographic Field Validation section in `citation-audit-common`. The required sequence is:
    a. If the `.bib` entry has a `doi`, fetch `https://api.crossref.org/works/<doi>` and verify the returned title, author(s), year, volume, issue, and pages match the `.bib` entry. A 4xx response means the DOI is invalid.

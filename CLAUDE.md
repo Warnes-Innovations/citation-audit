@@ -3,7 +3,7 @@
 ## What this repo is
 
 Python CLI, MCP server, VS Code Copilot agents, and shared skill for auditing
-LaTeX citations and classifying assertions by type (asserted-fact,
+LaTeX and Markdown citations and classifying assertions by type (asserted-fact,
 original-synthesis, derived-conclusion, own-contribution, definition,
 established-convention, narrative, unknown).
 

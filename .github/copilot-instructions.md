@@ -7,7 +7,7 @@ applyTo: "**"
 ## What this repo is
 
 A Python CLI, MCP server, VS Code Copilot agents, and shared skill for auditing
-citations in LaTeX documents.
+citations in LaTeX and Markdown documents.
 
 Entry points:
 - `citation-audit` — Click CLI
@@ -45,7 +45,7 @@ src/citation_audit/
         schema.py       # AssertionRecord, CitationRecord, AuditIndex dataclasses
         index.py        # Atomic read/write of .audit/<doc>/index.json
         scaffold.py     # Create .audit/<doc>/<label>/ stub files
-        extractor.py    # Parse .tex → list[Sentence]
+        extractor.py    # Parse .tex/.md → list[Sentence]
         classifier.py   # classify(Sentence) → (AssertionType, needs_citation)
 tests/
     conftest.py         # Shared fixtures (tmp_tex, tmp_cite_tex, tmp_doc_with_index)
@@ -71,7 +71,7 @@ tests/
 - Python ≥ 3.11, `from __future__ import annotations` in every module
 - All public functions use type hints
 - No external HTTP calls in this package — callers (agents) do HTTP themselves
-- `.audit/` directories are created relative to the `.tex` file's parent
+- `.audit/` directories are created relative to the source document's parent
 - `index.json` is written atomically via `tempfile + os.replace`
 - Assertion IDs are `"a-" + sha256(f"{doc_stem}:{text}")[:8]`
 
