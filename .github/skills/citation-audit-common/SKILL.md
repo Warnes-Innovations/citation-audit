@@ -57,7 +57,14 @@ Every audited assertion (cited or uncited) must be assigned one of the following
     - `confirmation_type`: one of `direct` (Crossref/PubMed/Google Books/WorldCat match with key fields confirmed), `indirect` (title found only in another paper's bibliography), `type_not_in_crossref` (source type — book, proceedings, etc. — not indexed in Crossref/PubMed; treat as neutral score 0 pending manual review), or `none` (no evidence of existence found)
     - `bib_doi_written`: `true` if a DOI was written back to the `.bib` file during this audit run; omit or set `false` otherwise
     - `doi_candidate`: candidate DOI string when validation was ambiguous and write-back was skipped (leave blank if not applicable)
-  - `source.pdf` or `source.txt`: downloaded or extracted source
+  - Download fields populated after attempting Paper Download (see Paper Download section):
+    - `source_file`: `source.pdf` or `source.txt` (omit if download failed)
+    - `source_url`: the URL from which the file was downloaded
+    - `source_type`: `open_access_pdf`, `pmc_pdf`, `preprint_pdf`, `publisher_text`, or `abstract_only`
+    - `download_date`: ISO 8601 date of download
+    - `file_sha256`: SHA-256 hash of the downloaded file (for change detection and deduplication)
+    - `library_path`: relative path to the file in the shared paper library if deduplication applied (mutually exclusive with `source_file`)
+  - `source.pdf` or `source.txt`: downloaded full text or extracted text of the referenced paper (see Paper Download)
   - `citation_<label>.md`: citing text, `assertion_type` of the citing claim, source text, support score, and notes
   - `summary.md`: summary for that source/citation
 - Each uncited assertion folder (`.audit/<citing-document>/assertions/<id>/`) contains:
@@ -139,6 +146,46 @@ Finding a title in another paper's bibliography is **not sufficient** to confirm
 - `confirmation_type: type_not_in_crossref` — source type (book, proceedings, etc.) not covered by Crossref/PubMed; no authoritative database confirmed or denied it; treat as neutral (score 0) pending manual review
 - `confirmation_type: none` — no evidence of existence found in any database
 
+## Paper Download
+
+Whenever a citation is confirmed (via Crossref, PubMed, or another authoritative database), attempt to retrieve and store the full text or PDF of the referenced paper. This enables support scoring from actual source text rather than title/abstract inference alone, and builds a persistent local library.
+
+### Download attempt sequence (try in order):
+1. **Unpaywall** — fetch `https://api.unpaywall.org/v2/<doi>?email=<email>`. If `best_oa_location.url_for_pdf` is non-null, download the PDF.
+2. **PubMed Central** — if the PubMed API response includes a `pmcid`, fetch `https://www.ncbi.nlm.nih.gov/pmc/articles/<PMCID>/pdf/`.
+3. **bioRxiv / medRxiv** — query `https://api.biorxiv.org/details/biorxiv/<doi>` for a preprint version.
+4. **Semantic Scholar** — fetch `https://api.semanticscholar.org/graph/v1/paper/DOI:<doi>?fields=openAccessPdf`; use `openAccessPdf.url` if present.
+5. **Publisher landing page** — as a last resort, fetch `doi_url` and extract any readable text (abstract + available body text). Save as `source.txt`.
+
+### Skip download when:
+- `confirmation_type` is `none` (paper does not exist — no file to fetch).
+- `source.pdf` or `source.txt` already exists in the artifact folder **and** `file_sha256` in `publication.md` matches the file on disk — avoid re-downloading unchanged files.
+- The file size exceeds **100 MB** — check `Content-Length` before downloading; if unavailable, abort and discard after the first 100 MB are received. Set `source_type: oversized` in `publication.md` and fall back to abstract-only.
+
+### Storage:
+- Save the file as `.audit/<citing-document>/<bibtex-label>/source.pdf` (binary PDF) or `.audit/<citing-document>/<bibtex-label>/source.txt` (extracted text).
+- Record in `publication.md`: `source_file`, `source_url`, `source_type`, `download_date` (ISO 8601), and `file_sha256` (SHA-256 hex digest).
+- If no file is downloadable, set `source_type: abstract_only` and record the abstract inline in `publication.md` under `abstract`.
+
+### Shared library deduplication:
+- The shared paper library lives in a separate private Git repository (default clone location: `~/.citation-papers`; override with the `PAPER_LIBRARY_PATH` environment variable).
+- Before downloading any paper, call `get_library_entry(doi)`. If `found: true` and `local_path` is non-null, use the existing file and skip download.
+- If not found or the file is absent, call `store_library_paper(doi, ...)` which runs the download sequence above and persists the result.
+- After a citation is confirmed, call `record_citing_doc(doi, doc)` to register the citing document against the library entry.
+- `citing_docs` entries use the **CitingRef** structure:
+  ```json
+  { "github": "Warnes-Innovations/multiscale-knowledge", "path": "knowledge-system.tex" }
+  ```
+  When no GitHub remote is detectable:
+  ```json
+  { "path": "knowledge-system.tex", "local_path": "/Users/warnes/src/project/knowledge-system.tex" }
+  ```
+  The `github` field takes the form `Owner/repo` matching the repository's GitHub remote. `path` is always the document path relative to the repository root.
+
+### Scoring impact:
+- When assigning the support score, prefer evidence drawn from the downloaded source text (introduction, results, discussion) over title-only inference.
+- If only `source_type: abstract_only` is available, cap the score at +50 unless the abstract directly quotes or measures the claimed fact.
+
 ## Support Score Scale
 - -100: explicitly contradicts / source does not exist / DOI resolves to wrong paper or 4xx / no relevant text found
 - -75: strongly contradicts or source evidence is opposite of the claim
@@ -160,6 +207,84 @@ When all conditions are met, add `doi = {<doi>}` as a new field to the matching 
 
 If validation fails or is ambiguous, record the candidate DOI in `publication.md` under `doi_candidate` and leave the `.bib` file unchanged.
 
+## Citing Document Edit Proposals
+
+When an audit finding requires a change to the citing document (`.tex` or `.md`) — not just to `.bib` — **never apply it silently**. Always present a numbered proposal and wait for explicit approval before writing.
+
+### Trigger conditions
+
+| Condition | Proposed action |
+|---|---|
+| Over-attributed claim: citing text asserts something the confirmed source does not say | Propose (a) inserting an additional `\citep{}` for the specific sub-claim, (b) softening the sentence to match the source, or both |
+| Missing citation on an `asserted-fact` sentence | Propose `\citep{<label>}` insertion after the relevant clause |
+| Replacement citation found by `citation-alternatives` | Propose swapping the `\citep{}` label |
+| BibTeX-only fix (field mismatch in `.bib`) | No citing-document edit needed — `.bib` write-back is separate |
+
+### Proposal format
+
+Present each proposed edit as a numbered block:
+
+> **Proposed edit #N — `<label>` — `<one-line reason>`**
+>
+> **Old:** `…exact current source text including surrounding \citep{} context…`
+> **New:** `…exact replacement text…`
+> **Rationale:** one sentence explaining why.
+
+List all proposals together at the end of the audit summary, after the score table and before "Citations Requiring User Review". Do not apply any edit until the user explicitly approves it (e.g. "yes", "apply", "apply #2", "apply all").
+
+### Approval workflow
+1. After completing the audit, collect all proposed edits and launch an `/obo` (`/OneByOne`) session with one edit per item.
+2. Present each edit in the proposal format above. The user approves, skips, or rejects each item individually.
+3. Apply each approved edit immediately with file-editing tools.
+4. Record each applied edit under `citing_doc_edits` in `index.json` and append it to `summary.md` under "Changes Applied".
+
+### `citing_doc_edits` schema (in `index.json`)
+
+```json
+"citing_doc_edits": [
+  {
+    "edit_date": "2026-05-11",
+    "label": "<bibtex-label>",
+    "reason": "<one-line>",
+    "old_text": "…",
+    "new_text": "…",
+    "status": "applied | rejected | pending"
+  }
+]
+```
+
+### What not to change
+- Do not rewrite author prose beyond what is needed to correct the citation marker or immediately surrounding clause.
+- Do not add inline explanatory text, footnotes, or new sentences.
+- Do not remove, reorder, or rename sections.
+- Limit each proposed edit to ≤ 5 lines of the source file.
+
+## LLM-Assisted Candidate Discovery
+
+When primary database searches (Crossref, PubMed, Google Scholar) return fewer than 2 candidates that score ≥ +50 for an assertion, agents may query an available LLM to surface additional candidate papers.
+
+### Recommended prompt
+> "What peer-reviewed papers provide direct evidence for the following claim? Please give author(s), title, journal, year, and DOI for each: [exact assertion text]"
+
+### Critical rules
+- Treat **all** LLM-suggested citations as **unverified leads**. LLMs frequently hallucinate plausible-sounding but non-existent DOIs, author combinations, or journal names.
+- **Every** suggestion must pass the full Bibliographic Field Validation sequence (Crossref DOI fetch → HTTP 200 + field match, or PubMed title+author search) before it may be scored or proposed.
+- A suggestion that fails Crossref/PubMed validation must be discarded — do not record it in any artifact.
+- **Expected yield**: roughly 1 in 3 LLM-suggested citations will be verifiable and usable. This is acceptable; treat the LLM as a brainstorming step, not an authoritative source.
+- Record which candidates originated from an LLM query in `publication.md` under `discovery_method: llm-assisted` so future audits can distinguish them from database-sourced candidates.
+
+### Suitable LLM query surfaces
+- DuckDuckGo AI chat (free, no login required)
+- Perplexity.ai
+- Any chat model available in the current agent environment
+
+### When to use
+| Agent | Trigger |
+|---|---|
+| Citation Finder | Phase 2: primary Crossref/PubMed search returns < 2 candidates |
+| Citation Alternatives | Step 4: Scholar search returns < 2 directly-confirmed candidates |
+| Citation Auditor | Step 6: citation cannot be confirmed and Scholar also returns no match |
+
 ## Exclusion
 - Any source or citation can be marked as "no longer cited". Excluded items must be omitted from audit summaries and indexes.
 
@@ -178,6 +303,12 @@ citation-audit update-citation <doc> <label> [--score N] [--confirmation TYPE]
 citation-audit tag-assertion <doc> <id> --type TYPE [--text "..."] [--notes "..."]
 citation-audit list <doc> [--what citations|assertions|both] [--format json|table]
 citation-audit report <doc> [--format markdown|json]
+citation-audit library list [--format table|json]
+citation-audit library get <doi> [--format json|text]
+citation-audit library add <doi> [--title ...] [--authors ...] [--year N] [--doc <path>]
+citation-audit library open <doi>
+citation-audit library export-bib [-o <file>]
+citation-audit library cite <doi> <doc>
 ```
 
 ### MCP tools (server name: `citation-audit`)
@@ -191,12 +322,19 @@ citation-audit report <doc> [--format markdown|json]
 | `tag_assertion` | Record or update assertion_type for an uncited passage |
 | `list_assertions` | Filtered list of assertion records |
 | `compute_assertion_id` | Return stable ID for a sentence |
+| `get_library_entry` | Look up a paper by DOI in the shared library; returns file path if present |
+| `store_library_paper` | Download and store a paper; enforces 100 MB cap; skips if already present |
+| `record_citing_doc` | Append a CitingRef to a library entry (idempotent) |
+| `list_library` | List all library entries as JSON or summary |
 
 ### When to use each
 - **`extract_assertions`**: at the start of any citation-finder or assertion-audit session — replaces the agent reading the full source document itself.
 - **`update_citation_record` / `tag_assertion`**: after completing a CrossRef/PubMed lookup or classifying an assertion — replaces manual JSON edits.
 - **`get_audit_status`**: at the start of a session to restore prior state without re-auditing.
 - **`scaffold_citation`**: immediately after identifying a new citation, before fetching source metadata.
+- **`get_library_entry`**: call before any download attempt; if `found: true` with a `local_path`, use the existing file.
+- **`store_library_paper`**: call after Bibliographic Field Validation succeeds (`confirmation_type: direct`) to download and register the paper.
+- **`record_citing_doc`**: call whenever a citation is confirmed for a document, even if the paper was already in the library.
 
 ## Usage
 - This skill is imported by citation-auditor, citation-alternatives, and citation-finder agents for consistent logic, definitions, and artifact structure.

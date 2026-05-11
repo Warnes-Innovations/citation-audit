@@ -1,6 +1,6 @@
 ---
 description: "Suggests and manages alternative sources for unsupportive or unavailable citations, proposes citation text updates, and maintains audit artifacts. Uses citation-audit-common skill."
-version: 1.2
+version: 1.4
 name: "Citation Alternatives"
 tools: [read, edit, search, web]
 skills: [citation-audit-common]
@@ -23,11 +23,20 @@ Use `citation-audit-common` for definitions, artifact structure, scoring, and ex
 2. **Check the `assertion_type` of each citation's claiming sentence** (from the CitationRecord). If the assertion_type is `original-synthesis` or `derived-conclusion`, skip that citation — the issue is over-attribution, not a missing source. Report this to the user instead of searching for alternatives.
 3. For each remaining citation scored ≤ 0 (indirectly confirmed, unconfirmed, or unavailable) or explicitly marked unavailable, proceed to search for candidate alternative sources (up to 5 candidates per citation).
 4. Use Google Scholar to search for potential alternative sources. Record the query URL and candidate results in memory — **do not write to any artifact folder yet** (folders are created in step 7 only for well-supported candidates).
+4b. **LLM-assisted fallback** — If Scholar returns fewer than 2 candidates with `confirmation_type: direct`, query an available LLM (e.g., DuckDuckGo AI, Perplexity) with the original assertion text:
+    > "What peer-reviewed papers provide direct evidence for: [assertion text]? Please give author(s), title, journal, year, and DOI."
+
+    Treat all LLM responses as **unverified leads** — verify every suggestion via steps 5a–5b before scoring. Expect roughly 1 in 3 suggestions to be usable.
 5. **Validate each candidate via Bibliographic Field Validation** (same sequence required in `citation-audit-common`) before scoring:
    - If the candidate has a DOI, fetch `https://api.crossref.org/works/<doi>` and cross-check title, author(s), and year. A match sets `confirmation_type: direct`.
    - If no DOI, search Crossref or PubMed by title+author+year. For `book`/`inproceedings`/`incollection` types, also try Google Books or WorldCat.
    - Scholar-only evidence (title found in a bibliography but no database match) sets `confirmation_type: indirect` — such candidates are capped at score 0 and must not be proposed as replacements for citations already at 0 or below.
    - Record `confirmation_type` in `publication.md` for each candidate.
+   - **Download and register each directly-confirmed candidate** using the library MCP tools:
+     1. Call `get_library_entry(doi)`. If `found: true` and `local_path` is non-null, use the existing file.
+     2. Otherwise call `store_library_paper(doi, ..., doc=<doc_path>)`. Enforces the 100 MB cap; sets `source_type: oversized` if exceeded.
+     3. Record download metadata in the candidate's `publication.md`.
+     Skip if `confirmation_type` is not `direct`.
 6. Score each validated alternative using the shared −100 to +100 scale. Only `confirmation_type: direct` candidates are eligible for positive scores.
 7. For well-supported alternatives (score ≥ +50):
    - create/update `.audit/<normalized-citing-document>/<alternative-label>/` using `scaffold_citation`

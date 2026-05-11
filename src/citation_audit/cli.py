@@ -8,6 +8,8 @@ from pathlib import Path
 import click
 
 from .core import extractor, classifier, index as idx_mod, scaffold as scf_mod
+from .core import library as lib_mod
+from .core.library import CitingRef, LibraryEntry
 from .core.schema import AssertionRecord, CitationRecord
 from .core.extractor import assertion_id
 
@@ -292,3 +294,160 @@ def cmd_report(doc: str, fmt: str):
         for aid, arec in idx.assertions.items():
             snippet = arec.text[:60].replace("|", "\\|").replace("\n", " ")
             click.echo(f"| `{aid}` | {arec.assertion_type} | {'yes' if arec.needs_citation else ''} | {snippet} |")
+
+
+# ---------------------------------------------------------------------------
+# library
+# ---------------------------------------------------------------------------
+
+@main.group("library")
+def cmd_library():
+    """Manage the shared paper library (~/.citation-papers or $PAPER_LIBRARY_PATH)."""
+
+
+def _require_library_root() -> "Path":
+    root = lib_mod.library_root()
+    if root is None:
+        click.echo(
+            "error: paper library not found.\n"
+            "Set PAPER_LIBRARY_PATH or clone citation-papers to ~/.citation-papers",
+            err=True,
+        )
+        sys.exit(1)
+    return root
+
+
+@cmd_library.command("list")
+@click.option("--format", "fmt", type=click.Choice(["table", "json"]),
+              default="table", show_default=True)
+def cmd_library_list(fmt: str):
+    """List all papers in the library."""
+    root = _require_library_root()
+    entries = lib_mod.load_library(root)
+    if fmt == "json":
+        click.echo(_as_json([e.to_dict() for e in entries.values()]))
+        return
+    click.echo(f"{'DOI / KEY':<45}  {'YEAR':>4}  {'TYPE':<18}  TITLE")
+    click.echo("-" * 100)
+    for key, e in entries.items():
+        title = (e.title or "")[:40]
+        year = str(e.year) if e.year else ""
+        click.echo(f"{key:<45}  {year:>4}  {e.source_type:<18}  {title}")
+
+
+@cmd_library.command("get")
+@click.argument("doi")
+@click.option("--format", "fmt", type=click.Choice(["json", "text"]),
+              default="json", show_default=True)
+def cmd_library_get(doi: str, fmt: str):
+    """Show the library entry for DOI."""
+    root = _require_library_root()
+    entry = lib_mod.get_entry(root, doi)
+    if entry is None:
+        click.echo(f"error: DOI '{doi}' not found in library", err=True)
+        sys.exit(1)
+    if fmt == "json":
+        click.echo(_as_json(entry.to_dict()))
+    else:
+        click.echo(f"Title:   {entry.title}")
+        click.echo(f"Authors: {'; '.join(entry.authors)}")
+        click.echo(f"Year:    {entry.year}")
+        click.echo(f"Journal: {entry.journal}")
+        click.echo(f"DOI:     {entry.doi}")
+        click.echo(f"File:    {entry.filename or '(none)'}")
+        click.echo(f"Type:    {entry.source_type}")
+        if entry.citing_docs:
+            click.echo("Cited by:")
+            for r in entry.citing_docs:
+                loc = f"{r.github}/{r.path}" if r.github else (r.local_path or r.path)
+                click.echo(f"  {loc}")
+
+
+@cmd_library.command("add")
+@click.argument("doi")
+@click.option("--title",   default="", help="Paper title.")
+@click.option("--authors", default="", help="Semicolon-separated author list.")
+@click.option("--year",    type=int,   default=None)
+@click.option("--journal", default="")
+@click.option("--email",   default=None, help="E-mail for Unpaywall/Crossref polite pool.")
+@click.option("--doc",     default=None,
+              help="Citing document path; auto-detects GitHub remote.")
+def cmd_library_add(doi: str, title: str, authors: str, year, journal: str,
+                    email, doc):
+    """Add a paper by DOI and attempt to download it."""
+    root = _require_library_root()
+    citing: list[CitingRef] = []
+    if doc:
+        citing.append(CitingRef.from_doc_path(Path(doc)))
+    entry = LibraryEntry(
+        doi         = doi,
+        title       = title,
+        authors     = [a.strip() for a in authors.split(";") if a.strip()],
+        year        = year,
+        journal     = journal,
+        citing_docs = citing,
+    )
+    kw = {}
+    if email:
+        kw["email"] = email
+    entry = lib_mod.store_paper(root, entry, **kw)
+    click.echo(f"stored: {entry.filename or '(no file — ' + entry.source_type + ')'}")
+    click.echo(f"sha256: {entry.sha256 or 'n/a'}")
+
+
+@cmd_library.command("open")
+@click.argument("doi")
+def cmd_library_open(doi: str):
+    """Print the local file path for DOI (or its doi_url if no local file)."""
+    root = _require_library_root()
+    entry = lib_mod.get_entry(root, doi)
+    if entry is None:
+        click.echo(f"error: DOI '{doi}' not found in library", err=True)
+        sys.exit(1)
+    if entry.filename:
+        fpath = lib_mod.papers_dir(root) / entry.filename
+        if fpath.exists():
+            click.echo(str(fpath))
+            return
+    click.echo(f"https://doi.org/{doi}")
+
+
+@cmd_library.command("export-bib")
+@click.option("--output", "-o", default=None,
+              help="Output .bib file path.  Prints to stdout if omitted.")
+def cmd_library_export_bib(output):
+    """Export all library entries as a BibTeX file."""
+    root = _require_library_root()
+    entries = lib_mod.load_library(root)
+    lines: list[str] = []
+    for key, e in entries.items():
+        bkey = lib_mod.doi_slug(e.doi) if e.doi else key.replace("sha256:", "sha256_")
+        lines.append(f"@article{{{bkey},")
+        if e.title:   lines.append(f"  title   = {{{e.title}}},")
+        if e.authors: lines.append(f"  author  = {{{' and '.join(e.authors)}}},")
+        if e.year:    lines.append(f"  year    = {{{e.year}}},")
+        if e.journal: lines.append(f"  journal = {{{e.journal}}},")
+        if e.doi:     lines.append(f"  doi     = {{{e.doi}}},")
+        if e.pmid:    lines.append(f"  pmid    = {{{e.pmid}}},")
+        lines.append("}\n")
+    bib_text = "\n".join(lines)
+    if output:
+        Path(output).write_text(bib_text)
+        click.echo(f"written: {output}")
+    else:
+        click.echo(bib_text)
+
+
+@cmd_library.command("cite")
+@click.argument("doi")
+@click.argument("doc")
+def cmd_library_cite(doi: str, doc: str):
+    """Record that DOC cites the paper identified by DOI."""
+    root = _require_library_root()
+    ref = CitingRef.from_doc_path(Path(doc))
+    try:
+        lib_mod.add_citing_doc(root, doi, ref)
+        click.echo(f"recorded citing reference: {ref.path}")
+    except KeyError as exc:
+        click.echo(f"error: {exc}", err=True)
+        sys.exit(1)

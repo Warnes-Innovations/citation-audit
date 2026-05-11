@@ -8,6 +8,8 @@ from typing import Optional
 from mcp.server.fastmcp import FastMCP
 
 from .core import extractor, classifier, index as idx_mod, scaffold as scf_mod
+from .core import library as lib_mod
+from .core.library import CitingRef, LibraryEntry
 from .core.schema import AssertionRecord, CitationRecord
 from .core.extractor import assertion_id as _assertion_id
 
@@ -352,8 +354,162 @@ def compute_assertion_id(doc: str, text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Library tools
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+def get_library_entry(doi: str) -> str:
+    """
+    Look up a paper in the shared library by DOI.
+
+    Returns the full LibraryEntry as JSON, or {"found": false} if absent.
+    Agents should call this before attempting to download a paper so that
+    re-downloads and duplicate storage are avoided.
+
+    Parameters
+    ----------
+    doi : str
+        Raw DOI string, e.g. "10.1038/s41586-021-03819-2".
+    """
+    root = lib_mod.library_root()
+    if root is None:
+        return _json({"found": False, "reason": "library not configured"})
+    entry = lib_mod.get_entry(root, doi)
+    if entry is None:
+        return _json({"found": False})
+    d = entry.to_dict()
+    d["found"] = True
+    if entry.filename:
+        fpath = lib_mod.papers_dir(root) / entry.filename
+        d["local_path"] = str(fpath) if fpath.exists() else None
+    return _json(d)
+
+
+@mcp.tool()
+def store_library_paper(
+    doi: str,
+    title: str = "",
+    authors: Optional[list[str]] = None,
+    year: Optional[int] = None,
+    journal: str = "",
+    pmid: Optional[str] = None,
+    abstract: str = "",
+    doc: Optional[str] = None,
+    email: Optional[str] = None,
+) -> str:
+    """
+    Add a paper to the shared library and attempt to download it.
+
+    Checks the library first; if the paper is already present with a valid
+    file and matching SHA-256, the download is skipped.  The 100 MB cap is
+    enforced; oversized papers are recorded with source_type "oversized".
+
+    Parameters
+    ----------
+    doi : str
+        Raw DOI string.
+    title : str, optional
+    authors : list[str], optional
+    year : int, optional
+    journal : str, optional
+    pmid : str, optional
+    abstract : str, optional
+    doc : str, optional
+        Absolute path to the citing document; used to record a CitingRef.
+    email : str, optional
+        Contact e-mail for Unpaywall / Crossref polite pool.
+
+    Returns
+    -------
+    JSON of the stored LibraryEntry plus "local_path" when a file exists.
+    """
+    root = lib_mod.library_root()
+    if root is None:
+        return _json({"error": "paper library not configured — set PAPER_LIBRARY_PATH"})
+
+    citing: list[CitingRef] = []
+    if doc:
+        citing.append(CitingRef.from_doc_path(Path(doc)))
+
+    entry = LibraryEntry(
+        doi         = doi,
+        pmid        = pmid,
+        title       = title,
+        authors     = authors or [],
+        year        = year,
+        journal     = journal,
+        abstract    = abstract,
+        citing_docs = citing,
+    )
+    kw = {}
+    if email:
+        kw["email"] = email
+    entry = lib_mod.store_paper(root, entry, **kw)
+
+    result = entry.to_dict()
+    if entry.filename:
+        fpath = lib_mod.papers_dir(root) / entry.filename
+        result["local_path"] = str(fpath) if fpath.exists() else None
+    return _json(result)
+
+
+@mcp.tool()
+def record_citing_doc(doi: str, doc: str) -> str:
+    """
+    Record that a document cites the paper identified by DOI.
+
+    Appends a CitingRef (with GitHub repo + path when detectable) to the
+    library entry.  Idempotent: duplicate paths are ignored.
+
+    Parameters
+    ----------
+    doi : str
+        Raw DOI string.
+    doc : str
+        Absolute path to the citing document.
+
+    Returns
+    -------
+    JSON with {"ok": true} or {"error": "<message>"}.
+    """
+    root = lib_mod.library_root()
+    if root is None:
+        return _json({"error": "paper library not configured"})
+    ref = CitingRef.from_doc_path(Path(doc))
+    try:
+        lib_mod.add_citing_doc(root, doi, ref)
+        return _json({"ok": True, "ref": ref.to_dict()})
+    except KeyError as exc:
+        return _json({"error": str(exc)})
+
+
+@mcp.tool()
+def list_library(format: str = "json") -> str:
+    """
+    Return all entries in the shared library.
+
+    Parameters
+    ----------
+    format : str
+        "json" (default) — full entry objects.
+        "summary" — compact list with doi, year, title, source_type.
+    """
+    root = lib_mod.library_root()
+    if root is None:
+        return _json({"error": "paper library not configured"})
+    entries = lib_mod.load_library(root)
+    if format == "summary":
+        return _json([
+            {"doi": e.doi, "year": e.year, "title": e.title, "source_type": e.source_type}
+            for e in entries.values()
+        ])
+    return _json([e.to_dict() for e in entries.values()])
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
 def main():
     mcp.run()
+

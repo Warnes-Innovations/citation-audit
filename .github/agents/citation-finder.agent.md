@@ -1,6 +1,6 @@
 ---
 description: "Identifies factual assertions in a document that lack citations (or have weak citations), finds verified supporting papers via Crossref/PubMed/Scholar, and presents each proposed citation to the user one-by-one via /obo for review and approval."
-version: 1.2
+version: 1.4
 name: "Citation Finder"
 tools: [read, edit, search, web]
 skills: [citation-audit-common]
@@ -51,11 +51,19 @@ Use `citation-audit-common` for URL field requirements, scoring, confirmation ty
 For each assertion:
 1. Formulate 1–3 search queries capturing the key factual claim (use field-specific terms, not generic phrases).
 2. Search Crossref (`https://api.crossref.org/works?query=<terms>&rows=5`) and PubMed (`https://pubmed.ncbi.nlm.nih.gov/?term=<terms>&format=abstract`).
+2b. **LLM-assisted fallback** — If steps 1–2 return fewer than 2 candidates, query an available LLM (e.g., via DuckDuckGo AI, Perplexity, or any chat model) with the exact assertion text:
+    > "What peer-reviewed papers provide direct evidence for the following claim? Please give author(s), title, journal, year, and DOI for each: [assertion text]"
+
+    Treat **all** LLM-suggested citations as **unverified leads** — expect roughly 1 in 3 to be usable after verification. Do not trust any DOI, title, or author detail until it passes the full verification sequence in step 3 below. Submit every suggestion through steps 3a–3c before scoring.
 3. For each candidate paper returned:
    a. Verify existence: fetch `https://api.crossref.org/works/<doi>` (Crossref API) and confirm HTTP 200 with matching metadata. A successful HTTP redirect to a paywall page alone is not sufficient — the Crossref API must return the paper's bibliographic metadata.
    b. Confirm all key bibliographic fields (title, authors, year, journal, volume, pages) from the API response.
    c. Record `confirmation_type: direct` only if Crossref or PubMed returned matching fields.
-   d. Score support for the specific assertion using the shared scale (−100 to +100).
+   d. **Download and register the paper** using the library MCP tools:
+      1. Call `get_library_entry(doi)`. If `found: true` and `local_path` is non-null, use that file for scoring.
+      2. Otherwise call `store_library_paper(doi, ..., doc=<doc_path>)`. Enforces the 100 MB cap.
+      Skip if `confirmation_type` is not `direct`.
+   e. Score support for the specific assertion using the shared scale (−100 to +100).
 4. If **exactly one** candidate scores ≥ +50 with `confirmation_type: direct`, select it as the proposal.
    If **multiple** candidates score ≥ +50, do **not** silently pick one — present a shortlist (up to 3) in the /obo item ranked by score, and ask the user to select before proceeding. Include the full reference, score, and DOI/PubMed links for each option.
    If **no** candidate reaches +50, note this and skip the assertion.
