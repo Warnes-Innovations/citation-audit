@@ -2,7 +2,7 @@
 description: "Use when auditing citations and validating that references explicitly support the claimed facts; maintains a structured .audit folder, source index, and summary documents."
 version: 1.5
 name: "Citation Auditor"
-tools: [read, edit, search, web]
+tools: [read, edit, search, web, terminal]
 argument-hint: "Audit a document's citations, create/maintain .audit artifacts, and summarize citation support."
 user-invocable: true
 skills: [citation-audit-common]
@@ -66,6 +66,13 @@ Return a concise markdown summary with:
 - locations of updated `.audit` files
 - citations requiring user review
 - **proposed citing-document edits** (via `/obo` per `citation-audit-common` → Citing Document Edit Proposals), if any — initiated last, awaiting per-edit approval
+
+## Git Workflow
+After each round of user-approved changes (corrected `.bib` fields, updated `.tex` citations, and `.audit/` artifact updates), offer to commit them:
+1. Show a `git status` diff of the files about to be staged.
+2. Stage only the files affected by the approved changes: the `.tex` document, `.bib` file, and `.audit/<doc>/` tree.
+3. Commit with a concise message, e.g. `audit(<doc>): correct DOI for <label>; update audit artifacts`.
+4. **Do not `git push` without explicit user confirmation.** When the user asks to push, confirm the branch and remote, then run `git push`.
 
 ## Artifact Guidance
 Follow `citation-audit-common` for canonical artifact names and layout. Each document should have its own `.audit/<doc>/index.json` and `.audit/<doc>/summary.md`.

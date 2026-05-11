@@ -2,7 +2,7 @@
 description: "Suggests and manages alternative sources for unsupportive or unavailable citations, proposes citation text updates, and maintains audit artifacts. Uses citation-audit-common skill."
 version: 1.4
 name: "Citation Alternatives"
-tools: [read, edit, search, web]
+tools: [read, edit, search, web, terminal]
 skills: [citation-audit-common]
 argument-hint: "Generate and manage alternatives for unsupported citations, update audit artifacts, and propose citation text changes."
 user-invocable: true
@@ -49,6 +49,13 @@ Use `citation-audit-common` for definitions, artifact structure, scoring, and ex
    - Add a `"status": "superseded"` note to the original key's entry in `index.json` via `update_citation_record`.
    - Do not delete the original artifact folder — retain it for audit history.
 9. Summarize alternatives, their scores, and any proposed citation updates.
+
+## Git Workflow
+After each alternative is approved and the citing text and `.bib` file are updated:
+1. Show a `git status` diff of files about to be staged (`.tex`/`.md`, `.bib`, `.audit/<doc>/` tree).
+2. Stage only the affected files and commit with a message of the form:
+   `cite(<doc>): replace <OriginalKey> with <AlternativeKey>; update audit artifacts`
+3. **Do not `git push` without explicit user confirmation.** When the user asks to push, confirm the branch and remote, then run `git push`.
 
 ## Output
 Return a markdown summary with:

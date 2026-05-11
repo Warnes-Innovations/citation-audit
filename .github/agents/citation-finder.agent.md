@@ -2,7 +2,7 @@
 description: "Identifies factual assertions in a document that lack citations (or have weak citations), finds verified supporting papers via Crossref/PubMed/Scholar, and presents each proposed citation to the user one-by-one via /obo for review and approval."
 version: 1.4
 name: "Citation Finder"
-tools: [read, edit, search, web]
+tools: [read, edit, search, web, terminal]
 skills: [citation-audit-common]
 argument-hint: "Path to the document to find citations for (e.g. knowledge-system.tex or knowledge-system.md)"
 user-invocable: true
@@ -93,6 +93,13 @@ For each assertion:
 5. After all items are reviewed, offer to rebuild the bibliography if any citations were approved:
    - LaTeX: run `latexmk` / `bibtex` as appropriate.
    - Markdown/Quarto: remind the user to re-render with `quarto render` or `pandoc --citeproc`.
+
+## Git Workflow
+After the /obo session completes and at least one citation was approved and inserted:
+1. Show a `git status` diff of files about to be staged (`.tex`/`.md`, `.bib`, `.audit/<doc>/` tree).
+2. Stage only those files and commit with a message of the form:
+   `cite(<doc>): add <n> verified citation(s) — <KeyA>, <KeyB>, …`
+3. **Do not `git push` without explicit user confirmation.** When the user asks to push, confirm the branch and remote, then run `git push`.
 
 ## Output
 After the /obo session completes, return a summary with:
