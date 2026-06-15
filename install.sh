@@ -201,13 +201,13 @@ echo "    Linked $COPILOT_HOME/skills/citation-audit-common → $SKILL_SRC"
 echo ""
 
 # ------------------------------------------------------------------
-# 7. Symlink agent files into vscode-config agents directory
+# 7. Symlink agent files into agent-config agents directory
 # ------------------------------------------------------------------
-VSCODE_CONFIG="${VSCODE_CONFIG:-$HOME/src/vscode-config}"
+AGENT_CONFIG="${AGENT_CONFIG:-$HOME/src/agent-config}"
 AGENTS_SRC="$SCRIPT_DIR/.github/agents"
-AGENTS_DST="$VSCODE_CONFIG/agents"
+AGENTS_DST="$AGENT_CONFIG/agents"
 
-if [[ -d "$VSCODE_CONFIG" ]]; then
+if [[ -d "$AGENT_CONFIG" ]]; then
     echo "--> Symlinking agent files into $AGENTS_DST/"
     mkdir -p "$AGENTS_DST"
     for agent_file in "$AGENTS_SRC"/*.agent.md; do
@@ -217,8 +217,8 @@ if [[ -d "$VSCODE_CONFIG" ]]; then
     done
     echo ""
 else
-    echo "    note: $VSCODE_CONFIG not found — skipping agent symlinks" >&2
-    echo "    Set VSCODE_CONFIG=/path/to/vscode-config to enable." >&2
+    echo "    note: $AGENT_CONFIG not found — skipping agent symlinks" >&2
+    echo "    Set AGENT_CONFIG=/path/to/agent-config to enable." >&2
     echo ""
 fi
 

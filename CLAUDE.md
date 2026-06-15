@@ -47,8 +47,8 @@ uv run pytest          # run all tests
 ./install.sh --tool    # also install as a global uv tool
 ```
 
-Running `~/src/vscode-config/setup.sh` has the same effect for the skill links.
+Running `~/src/agent-config/setup.sh` has the same effect for the skill links.
 
 ## Slash commands
 
-Prompt files from vscode-config are linked into `.claude/commands/` by `setup.sh`.
+Prompt files from agent-config are linked into `.claude/commands/` by `setup.sh`.

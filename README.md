@@ -78,7 +78,7 @@ uv run pytest         # run all tests
 
 `install.sh` also links `.github/skills/citation-audit-common/` into
 `~/.codex/skills/` and `~/.copilot/skills/`. Running
-`~/src/vscode-config/setup.sh` achieves the same effect.
+`~/src/agent-config/setup.sh` achieves the same effect.
 
 ## Assertion Type Vocabulary
 
