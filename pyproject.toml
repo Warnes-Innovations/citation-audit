@@ -13,7 +13,8 @@ authors = [{ name = "Greg Warnes", email = "greg@warnes-innovations.com" }]
 keywords = ["citation", "audit", "latex", "mcp", "bibtex"]
 dependencies = [
     "click>=8.0",
-    "mcp[cli]>=1.0",
+    # <2: mcp 2.x removed mcp.server.fastmcp, which mcp_server.py imports.
+    "mcp[cli]>=1.0,<2",
 ]
 
 [project.optional-dependencies]
