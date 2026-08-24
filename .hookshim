@@ -1,2 +1,5 @@
-# Protect the repository's main branch by default.
-main
+# This repo has no devel branch and a single maintainer; direct pushes to
+# main are the normal workflow here. Comment-only file per hookshim's own
+# rule: presence of a tracked .hookshim replaces the built-in main/master
+# default, and "an empty or comment-only file explicitly protects no
+# branches." (Greg, 2026-08-23, OBO follow-up.)
